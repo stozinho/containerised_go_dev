@@ -1,42 +1,41 @@
-# syntax = docker/dockerfile:1-experimental
+FROM golang:alpine AS builder
 
-FROM --platform=${BUILDPLATFORM} golang:1.15.0-alpine AS base
-WORKDIR /src
-ENV CGO_ENABLED=0
-COPY go.* .
+# Set necessary environmet variables needed for our image
+ENV GO111MODULE=on \
+    CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=amd64
+
+# Move to working directory /build
+WORKDIR /build
+
+# Copy and download dependency using go mod
+COPY go.mod .
+COPY go.sum .
 RUN go mod download
 
-FROM base AS build
-ARG TARGETOS
-ARG TARGETARCH
-RUN --mount=target=. \
-    --mount=type=cache,target=/root/.cache/go-build \
-    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/example .
+# Copy the code into the container
+COPY . .
 
-FROM base AS unit-test
-RUN --mount=target=. \
-    --mount=type=cache,target=/root/.cache/go-build \
-    mkdir /out && go test -v -coverprofile=/out/cover.out ./...
+# Run test
+RUN go test ./...
 
-FROM golangci/golangci-lint:v1.27-alpine AS lint-base
+# Build the application
+RUN go build -o main .
 
-FROM base AS lint
-RUN --mount=target=. \
-    --mount=from=lint-base,src=/usr/bin/golangci-lint,target=/usr/bin/golangci-lint \
-    --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/root/.cache/golangci-lint \
-    golangci-lint run --timeout 10m0s ./...
+# Move to /dist directory as the place for resulting binary folder
+WORKDIR /dist
 
-FROM scratch AS unit-test-coverage
-COPY --from=unit-test /out/cover.out /cover.out
+# Copy binary from build to main folder
+RUN cp /build/main .
 
-FROM scratch AS bin-unix
-COPY --from=build /out/example /
+############################
+# STEP 2 build a small image
+############################
+FROM scratch
 
-FROM bin-unix AS bin-linux
-FROM bin-unix AS bin-darwin
+COPY --from=builder /dist/main /
+COPY ./database/data.json /database/data.json
 
-FROM scratch AS bin-windows
-COPY --from=build /out/example /example.exe
-
-FROM bin-${TARGETOS} as bin
+# Command to run the executable
+ENTRYPOINT ["/main"]

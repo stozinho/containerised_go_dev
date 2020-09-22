@@ -17,3 +17,15 @@ func TestEchoErrorNoArgs(t *testing.T) {
 	err := echo([]string{})
 	require.Error(t, err)
 }
+
+func TestGenerateSHA256MAC(t *testing.T) {
+	// Test happy path
+	_, err := generateSHA256MAC("secretstring")
+	require.NoError(t, err)
+}
+
+func TestGenerateSHA256MACErrorNoArgs(t *testing.T) {
+	// Test empty arguments
+	_, err := generateSHA256MAC("")
+	require.Error(t, err)
+}
